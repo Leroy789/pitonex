@@ -270,21 +270,31 @@ class Player:
     def draw(self, surface):
         if self.invincible and pygame.time.get_ticks() % 200 < 100:
             return
-            
-        # Рисование игрока
-        pygame.draw.rect(surface, self.color, 
-                        (self.x, self.y + self.animation_offset, self.width, self.height), 0, 10)
-        
-        # Глаза
-        eye_offset = self.animation_offset
-        pygame.draw.circle(surface, WHITE, 
-                          (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3 + eye_offset)), 8)
-        pygame.draw.circle(surface, WHITE, 
-                          (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3 + eye_offset)), 8)
-        pygame.draw.circle(surface, BLACK, 
-                          (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3 + eye_offset)), 4)
-        pygame.draw.circle(surface, BLACK, 
-                          (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3 + eye_offset)), 4)
+    
+        center_x = self.x + self.width // 2
+        center_y = self.y + self.height // 2 + self.animation_offset
+    
+    # Рисуем звезду
+        points = []
+        outer_radius = self.width // 2
+        inner_radius = outer_radius // 2
+        num_points = 5
+    
+        for i in range(num_points * 2):
+            angle = math.pi * 2 * i / (num_points * 2) - math.pi / 2
+            radius = outer_radius if i % 2 == 0 else inner_radius
+            x = center_x + radius * math.cos(angle)
+            y = center_y + radius * math.sin(angle)
+            points.append((x, y))
+    
+        pygame.draw.polygon(surface, self.color, points)
+    
+    # Глаза
+        pygame.draw.circle(surface, WHITE, (center_x - 8, center_y - 8), 4)
+        pygame.draw.circle(surface, WHITE, (center_x + 8, center_y - 8), 4)
+        pygame.draw.circle(surface, BLACK, (center_x - 8, center_y - 8), 2)
+        pygame.draw.circle(surface, BLACK, (center_x + 8, center_y - 8), 2)
+    
 
 class Platform:
     def __init__(self, x, y, is_start=False, platform_type=PlatformType.NORMAL):
