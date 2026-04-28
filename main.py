@@ -2,6 +2,8 @@ import pygame
 import random
 import sys
 import math
+import json
+import os
 from enum import Enum
 
 pygame.init()
@@ -54,6 +56,96 @@ font = pygame.font.SysFont('Arial', 36)
 small_font = pygame.font.SysFont('Arial', 24)
 big_font = pygame.font.SysFont('Arial', 72)
 
+# ============= СИСТЕМА СОХРАНЕНИЯ РЕЙТИНГА =============
+class ScoreManager:
+    """Управляет сохранением и загрузкой рекордов"""
+    
+    def __init__(self):
+        self.filename = "scores.json"  # Имя файла для сохранения
+        self.scores = {
+            "high_score": 0,           # Главный рекорд
+            "top_5": [],               # Топ-5 рекордов
+            "total_games": 0,          # Всего сыграно игр
+            "total_score": 0           # Сумма всех очков
+        }
+        self.load_scores()
+    
+    def load_scores(self):
+        """Загружает рекорды из файла"""
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.scores.update(data)
+                    # Сортируем топ-5 перед загрузкой
+                    self.scores["top_5"].sort(reverse=True)
+                    self.scores["top_5"] = self.scores["top_5"][:5]
+            except:
+                print("Ошибка загрузки рекордов, создаю новый файл")
+                self.save_scores()
+        else:
+            self.save_scores()
+    
+    def save_scores(self):
+        """Сохраняет рекорды в файл"""
+        try:
+            with open(self.filename, 'w', encoding='utf-8') as f:
+                json.dump(self.scores, f, ensure_ascii=False, indent=2)
+            return True
+        except:
+            print("Ошибка сохранения рекордов")
+            return False
+    
+    def update_score(self, score):
+        """Обновляет рекорды при новом результате"""
+        updated = False
+        
+        # Обновляем общую статистику
+        self.scores["total_games"] += 1
+        self.scores["total_score"] += score
+        
+        # Проверяем, побит ли главный рекорд
+        if score > self.scores["high_score"]:
+            self.scores["high_score"] = score
+            updated = True
+        
+        # Добавляем в топ-5 если результат достаточно высокий
+        self.scores["top_5"].append(score)
+        self.scores["top_5"].sort(reverse=True)
+        self.scores["top_5"] = self.scores["top_5"][:5]
+        
+        # Сохраняем изменения
+        self.save_scores()
+        return updated
+    
+    def get_high_score(self):
+        """Возвращает главный рекорд"""
+        return self.scores["high_score"]
+    
+    def get_top_5(self):
+        """Возвращает топ-5 рекордов"""
+        return self.scores["top_5"]
+    
+    def get_average_score(self):
+        """Возвращает средний результат"""
+        if self.scores["total_games"] == 0:
+            return 0
+        return self.scores["total_score"] // self.scores["total_games"]
+    
+    def get_total_games(self):
+        """Возвращает количество сыгранных игр"""
+        return self.scores["total_games"]
+    
+    def reset_scores(self):
+        """Сбрасывает все рекорды"""
+        self.scores = {
+            "high_score": 0,
+            "top_5": [],
+            "total_games": 0,
+            "total_score": 0
+        }
+        self.save_scores()
+
 class Button:
     def __init__(self, x, y, width, height, text, color, hover_color, text_color=WHITE):
         self.rect = pygame.Rect(x, y, width, height)
@@ -81,7 +173,8 @@ class Button:
         return False
 
 class Menu:
-    def __init__(self):
+    def __init__(self, score_manager):
+        self.score_manager = score_manager
         self.state = GameState.MENU
         self.buttons = []
         self.create_buttons()
@@ -91,12 +184,12 @@ class Menu:
     def create_buttons(self):
         button_width = 250
         button_height = 50
-        start_y = HEIGHT // 2
+        start_y = HEIGHT // 2 - 80
         
         # Кнопка "Начать игру"
         start_button = Button(
             WIDTH // 2 - button_width // 2,
-            start_y - 40,
+            start_y,
             button_width,
             button_height,
             "Начать игру",
@@ -106,10 +199,23 @@ class Menu:
         )
         self.buttons.append(start_button)
         
+        # Кнопка "Статистика"
+        stats_button = Button(
+            WIDTH // 2 - button_width // 2,
+            start_y + 70,
+            button_width,
+            button_height,
+            "Статистика",
+            DARK_BLUE,
+            BLUE,
+            WHITE
+        )
+        self.buttons.append(stats_button)
+        
         # Кнопка "Выход"
         exit_button = Button(
             WIDTH // 2 - button_width // 2,
-            start_y + 40,
+            start_y + 140,
             button_width,
             button_height,
             "Выход",
@@ -141,6 +247,58 @@ class Menu:
             if particle['y'] < 0 or particle['size'] <= 0:
                 self.particles.remove(particle)
     
+    def draw_stats(self, surface):
+        """Рисует окно со статистикой (закрывается по ESC)"""
+        # Полупрозрачный фон
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        surface.blit(overlay, (0, 0))
+        
+        # Рамка статистики
+        stats_rect = pygame.Rect(WIDTH//2 - 300, HEIGHT//2 - 100, 600, 400)
+        pygame.draw.rect(surface, DARK_BLUE, stats_rect, 0, 15)
+        pygame.draw.rect(surface, GOLD, stats_rect, 3, 15)
+        
+        # Заголовок
+        title_text = big_font.render("СТАТИСТИКА", True, GOLD)
+        title_rect = title_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 150))
+        surface.blit(title_text, title_rect)
+        
+        # Инструкция по закрытию
+        close_text = small_font.render("", True, LIGHT_GRAY)
+        close_rect = close_text.get_rect(center=(WIDTH//2, HEIGHT//2 + 170))
+        surface.blit(close_text, close_rect)
+        
+        # Рекорды
+        y_offset = HEIGHT//2 - 80
+        
+        # Главный рекорд
+        high_score_text = font.render(f"Рекорд: {self.score_manager.get_high_score()}", True, YELLOW)
+        surface.blit(high_score_text, (WIDTH//2 - 200, y_offset))
+        y_offset += 45
+        
+        # Всего игр
+        games_text = small_font.render(f"Сыграно игр: {self.score_manager.get_total_games()}", True, WHITE)
+        surface.blit(games_text, (WIDTH//2 - 200, y_offset))
+        y_offset += 35
+        
+        # Средний результат
+        avg_text = small_font.render(f"Средний результат: {self.score_manager.get_average_score()}", True, WHITE)
+        surface.blit(avg_text, (WIDTH//2 - 200, y_offset))
+        y_offset += 45
+        
+        # Топ-5 рекордов
+        top_text = font.render("Топ-5 рекордов:", True, CYAN)
+        surface.blit(top_text, (WIDTH//2 - 200, y_offset))
+        y_offset += 40
+        
+        top_5 = self.score_manager.get_top_5()
+        for i, score in enumerate(top_5, 1):
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            score_text = small_font.render(f"{medal} {score} очков", True, LIGHT_GRAY)
+            surface.blit(score_text, (WIDTH//2 - 150, y_offset))
+            y_offset += 30
+    
     def draw(self, surface):
         # Градиентный фон
         for i in range(HEIGHT):
@@ -171,12 +329,16 @@ class Menu:
         subtitle_rect = subtitle_text.get_rect(center=(WIDTH // 2, title_y + 50))
         surface.blit(subtitle_text, subtitle_rect)
         
+        # Показываем текущий рекорд в меню
+        high_score_text = small_font.render(f"Рекорд: {self.score_manager.get_high_score()}", True, YELLOW)
+        surface.blit(high_score_text, (WIDTH - 150, 20))
+        
         # Кнопки
         for button in self.buttons:
             button.draw(surface)
         
         # Версия игры
-        version_text = small_font.render("Версия 2.0", True, LIGHT_GRAY)
+        version_text = small_font.render("Версия 3.0", True, LIGHT_GRAY)
         surface.blit(version_text, (10, HEIGHT - 30))
     
     def handle_event(self, event):
@@ -270,31 +432,21 @@ class Player:
     def draw(self, surface):
         if self.invincible and pygame.time.get_ticks() % 200 < 100:
             return
-    
-        center_x = self.x + self.width // 2
-        center_y = self.y + self.height // 2 + self.animation_offset
-    
-    # Рисуем звезду
-        points = []
-        outer_radius = self.width // 2
-        inner_radius = outer_radius // 2
-        num_points = 5
-    
-        for i in range(num_points * 2):
-            angle = math.pi * 2 * i / (num_points * 2) - math.pi / 2
-            radius = outer_radius if i % 2 == 0 else inner_radius
-            x = center_x + radius * math.cos(angle)
-            y = center_y + radius * math.sin(angle)
-            points.append((x, y))
-    
-        pygame.draw.polygon(surface, self.color, points)
-    
-    # Глаза
-        pygame.draw.circle(surface, WHITE, (center_x - 8, center_y - 8), 4)
-        pygame.draw.circle(surface, WHITE, (center_x + 8, center_y - 8), 4)
-        pygame.draw.circle(surface, BLACK, (center_x - 8, center_y - 8), 2)
-        pygame.draw.circle(surface, BLACK, (center_x + 8, center_y - 8), 2)
-    
+            
+        # Рисование игрока
+        pygame.draw.rect(surface, self.color, 
+                        (self.x, self.y + self.animation_offset, self.width, self.height), 0, 10)
+        
+        # Глаза
+        eye_offset = self.animation_offset
+        pygame.draw.circle(surface, WHITE, 
+                          (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3 + eye_offset)), 8)
+        pygame.draw.circle(surface, WHITE, 
+                          (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3 + eye_offset)), 8)
+        pygame.draw.circle(surface, BLACK, 
+                          (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3 + eye_offset)), 4)
+        pygame.draw.circle(surface, BLACK, 
+                          (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3 + eye_offset)), 4)
 
 class Platform:
     def __init__(self, x, y, is_start=False, platform_type=PlatformType.NORMAL):
@@ -423,19 +575,22 @@ def draw_text(surface, text, font, color, x, y, center=True):
     surface.blit(text_surface, text_rect)
 
 def main():
-    menu = Menu()
+    # Создаем менеджер рекордов
+    score_manager = ScoreManager()
+    menu = Menu(score_manager)
     game_state = GameState.MENU
     
     platforms = None
     player = None
     score = 0
-    high_score = 0
     safe_zone_active = True
     safe_zone_timer = 300
     jump_delay = 0
     jump_cooldown = 10
     scroll_offset = 0
     game_over = False
+    show_stats = False  # Флаг показа статистики
+    new_record = False   # Флаг нового рекорда
     
     running = True
     while running:
@@ -443,23 +598,32 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                if game_state != GameState.MENU:
-                    game_state = GameState.MENU
-                    game_over = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    if show_stats:
+                        # Если открыта статистика - закрываем её
+                        show_stats = False
+                    elif game_state != GameState.MENU:
+                        # Если не в меню - выходим в меню
+                        game_state = GameState.MENU
+                        game_over = False
                     
             if game_state == GameState.MENU:
-                choice = menu.handle_event(event)
-                if choice == 0:  # Начать игру
-                    platforms, start_platform_y = create_platforms()
-                    player = Player(start_platform_y)
-                    score = 0
-                    game_over = False
-                    safe_zone_active = True
-                    safe_zone_timer = 300
-                    game_state = GameState.PLAYING
-                elif choice == 1:  # Выход
-                    running = False
+                if not show_stats:
+                    choice = menu.handle_event(event)
+                    if choice == 0:  # Начать игру
+                        platforms, start_platform_y = create_platforms()
+                        player = Player(start_platform_y)
+                        score = 0
+                        game_over = False
+                        new_record = False
+                        safe_zone_active = True
+                        safe_zone_timer = 300
+                        game_state = GameState.PLAYING
+                    elif choice == 1:  # Статистика
+                        show_stats = True
+                    elif choice == 2:  # Выход
+                        running = False
                     
             elif game_state == GameState.PLAYING:
                 if event.type == pygame.KEYDOWN:
@@ -475,6 +639,7 @@ def main():
                         player = Player(start_platform_y)
                         score = 0
                         game_over = False
+                        new_record = False
                         safe_zone_active = True
                         safe_zone_timer = 300
                         
@@ -485,6 +650,10 @@ def main():
         if game_state == GameState.MENU:
             menu.update()
             menu.draw(screen)
+            
+            # Рисуем статистику если нужно
+            if show_stats:
+                menu.draw_stats(screen)
             
         elif game_state == GameState.PLAYING:
             if jump_delay > 0:
@@ -501,8 +670,11 @@ def main():
                 
                 if not alive:
                     game_over = True
-                    if score > high_score:
-                        high_score = score
+                    # Сохраняем результат и проверяем рекорд
+                    if score > 0:
+                        was_record = score_manager.update_score(score)
+                        if was_record:
+                            new_record = True
                 
                 # Обновление платформ и начисление очков
                 for platform in platforms:
@@ -546,7 +718,7 @@ def main():
             
             # UI
             draw_text(screen, f"Счет: {score}", font, BLACK, WIDTH // 2, 30)
-            draw_text(screen, f"Рекорд: {high_score}", small_font, BLACK, WIDTH // 2, 70)
+            draw_text(screen, f"Рекорд: {score_manager.get_high_score()}", small_font, BLACK, WIDTH // 2, 70)
             
             if safe_zone_active and not game_over:
                 seconds_left = safe_zone_timer // 60
@@ -554,7 +726,7 @@ def main():
                          small_font, GREEN, WIDTH // 2, 110)
             
             if not game_over:
-                draw_text(screen, "← → или A D | ESC - меню", 
+                draw_text(screen, " ESC - меню", 
                          small_font, BLACK, WIDTH // 2, HEIGHT - 40)
                 
                 if player.invincible:
@@ -565,10 +737,17 @@ def main():
                 overlay.fill((0, 0, 0, 180))
                 screen.blit(overlay, (0, 0))
                 
-                draw_text(screen, "ИГРА ОКОНЧЕНА", big_font, RED, WIDTH // 2, HEIGHT // 2 - 60)
-                draw_text(screen, f"Ваш счет: {score}", font, WHITE, WIDTH // 2, HEIGHT // 2)
-                draw_text(screen, f"Рекорд: {high_score}", small_font, YELLOW, WIDTH // 2, HEIGHT // 2 + 50)
-                draw_text(screen, "Нажмите R для рестарта или ESC для меню", small_font, WHITE, WIDTH // 2, HEIGHT // 2 + 100)
+                draw_text(screen, "ИГРА ОКОНЧЕНА", big_font, RED, WIDTH // 2, HEIGHT // 2 - 80)
+                draw_text(screen, f"Ваш счет: {score}", font, WHITE, WIDTH // 2, HEIGHT // 2 - 20)
+                
+                # Показываем сообщение о новом рекорде
+                if new_record:
+                    draw_text(screen, "НОВЫЙ РЕКОРД! 🎉", font, GOLD, WIDTH // 2, HEIGHT // 2 + 30)
+                    draw_text(screen, f"Рекорд: {score_manager.get_high_score()}", small_font, YELLOW, WIDTH // 2, HEIGHT // 2 + 70)
+                else:
+                    draw_text(screen, f"Рекорд: {score_manager.get_high_score()}", small_font, YELLOW, WIDTH // 2, HEIGHT // 2 + 30)
+                
+                draw_text(screen, "Нажмите R для рестарта или ESC для меню", small_font, WHITE, WIDTH // 2, HEIGHT // 2 + 120)
         
         pygame.display.flip()
         clock.tick(FPS)
